@@ -1,0 +1,8 @@
+---
+
+# This is hadoop only variable file 
+
+username: group_ubuntu
+
+#It gets precedence over   (all) Variable file 
+

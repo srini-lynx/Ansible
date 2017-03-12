@@ -1,0 +1,7 @@
+---
+
+#This is a yml file which has hostvar information 
+
+username: hadoop1
+
+#Hadoop1 user should get created when we call asible 

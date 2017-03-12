@@ -1,0 +1,250 @@
+---
+# Hadoop-psueodo Cluster Setup 
+- hosts: cluster
+  become: yes 
+  become_user: root
+  gather_facts: no
+  vars:
+    project_root: /usr/local
+  tasks:
+    - name: Update the apt-get Cache 
+      apt:   
+          update_cache: yes
+
+    - name: Install or Upgrade VI
+      apt:
+          name: vim
+          state: latest
+          update_cache: yes
+
+    - name: Install or Upgrade TREE package 
+      apt:
+          name: tree
+          state: latest
+          update_cache: yes
+
+    - name: Check if the Hadoop tar.zip Already Exists in the Server
+      command: /usr/bin/test -f hadoop-2.7.3.tar.gz
+      ignore_errors: True
+      register: hadoop_exists 
+
+    - name: Download Hadoop TAR file in Present directory (/home/vagrant)
+      shell: wget http://ftp.wayne.edu/apache/hadoop/common/hadoop-2.7.3/hadoop-2.7.3.tar.gz
+      when: hadoop_exists.rc != 0      
+
+    - name: Check if the Direcotry hadoop-2.7.3 Already exisits or not 
+      command: /usr/bin/test -d /usr/local/hadoop  
+      ignore_errors: True
+      register: hadoop_dir_exists
+
+    - name: Untar Hadoop.tar.gz in Existing Directory (/home/vagrant) 
+      shell: tar -xvf hadoop-2.7.3.tar.gz
+      when: hadoop_dir_exists.rc !=0 
+ 
+      
+    - name: Move the hadoop-2.7.3/ Hadoop Directory and rename as  /usr/local/hadoop  
+      shell: mv /home/vagrant/hadoop-2.7.3/ /usr/local/hadoop 
+      when: hadoop_dir_exists.rc != 0 
+
+    - name: Change Ownership:Group to vagrant from default root in /usr/local/hadoop 
+      shell: chown vagrant:vagrant -R /usr/local/hadoop 
+      when: hadoop_dir_exists.rc == 0
+
+
+##### NOW HADOOP CONFIGURATION STARTS 
+####  IPV6 Settings Check and UPdate in /etc/sysctl.conf 
+
+    - name: Check IPV6 Settings in /etc/sysctl.conf  If Present Skipping.....
+      command: egrep -i "net.ipv6.conf.all.disable_ipv6|net.ipv6.conf.default.disable_ipv6|net.ipv6.conf.lo.disable_ipv6" /etc/sysctl.conf  
+      ignore_errors: True 
+      register: ipv6_settings
+
+    - name: Disable IPV6 Settings in /etc/sysctl.conf 
+      shell: "{{item}}"
+      with_items:
+         - cp /etc/sysctl.conf /etc/sysctl.conf.ORIG
+         - echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf 
+         - echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
+         - echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf 
+      when: ipv6_settings.rc != 0
+
+###### Checking /etc/hosts file for localhost and replacing it with node name 
+
+    - name: Backup /etc/hosts  and modify the it as per Stadard ....
+      lineinfile:  dest=/etc/hosts 
+                   state=absent 
+                   regexp='^ff(.*)|^::1(.*)'
+
+                   
+                   
+####  Entering meaning full name in /etc/hostname
+
+    - name: Check if already hostname exists  
+      shell: grep -i 'hadoop' /etc/hostname 
+      ignore_errors: True 
+      register: host_exists
+
+    - name: Add hostname to /etc/hostname
+      shell: echo "hadoop" > /etc/hostname
+      when: host_exists.rc != 0
+
+    - name: Check if  IP address already exists in /etc/hosts File 
+      shell: grep -i '192.168.33.20' /etc/hosts
+      ignore_errors: True 
+      register: ip_exists 
+
+    - name: Bind the IP Address along with Host name in /etc/hosts File 
+      shell: echo "192.168.33.20   hadoop hadoop-pseuodo" >> /etc/hosts 
+      when: ip_exists != 0
+
+
+
+
+### Updating the .bashrc file with hadoop environment variable
+
+    - name: Check if .bashrc file already has hadoop configurations 
+      shell: egrep -i "JAVA_HOME|HADOOP_HOME|YARN_HOME|HADOOP" /home/vagrant/.bashrc  
+      ignore_errors: True 
+      register: hadoop_var_exists 
+
+    - name: Add .bashrc Script with Hadoop Details 
+      shell: "{{item}}"
+      with_items: 
+         - echo "export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" >> /home/vagrant/.bashrc  
+         - echo "export HADOOP_HOME=/usr/local/hadoop" >> /home/vagrant/.bashrc  
+         - echo "export PATH=\$PATH:\$HADOOP_HOME/bin" >> /home/vagrant/.bashrc  
+         - echo "export PATH=\$PATH:\$HADOOP_HOME/sbin" >> /home/vagrant/.bashrc  
+         - echo "export HADOOP_MAPRED_HOME=\$HADOOP_HOME" >> /home/vagrant/.bashrc 
+         - echo "export HADOOP_COMMON_HOME=\$HADOOP_HOME" >> /home/vagrant/.bashrc  
+         - echo "export HADOOP_HDFS_HOME=\$HADOOP_HOME" >> /home/vagrant/.bashrc  
+         - echo "export YARN_HOME=\$HADOOP_HOME" >> /home/vagrant/.bashrc  
+         - echo "export HADOOP_COMMON_LIB_NATIVE_DIR=\$HADOOP_HOME/lib/native" >> /home/vagrant/.bashrc  
+         - echo "export HADOOP_OPTS=\"-Djava.library.path=$HADOOP_HOME/lib\"" >> /home/vagrant/.bashrc  
+
+         - . /home/vagrant/.bashrc  
+
+      when: hadoop_var_exists.rc != 0
+
+
+
+############  Generating SSH key for Password Less Authentication to Various Services of HADOOP
+
+    - name: Generate SSH key for VAGRANT user and Adding it to authorized_keys 
+      user: name=vagrant 
+            generate_ssh_key=yes
+            ssh_key_bits=2048
+            ssh_key_file=.ssh/id_rsa 
+      ignore_errors: True 
+      register: ssh_generate_value
+
+
+    - name: Copy the Newly generated Keys to the authorized_keys list.
+      shell:
+            cat /home/vagrant/.ssh/id_rsa.pub >> /home/vagrant/.ssh/authorized_keys
+      
+      #when: ssh_generate_value.rc != 0
+
+
+#### Create Directory Structure for Sudo Cluster namenode and datanode directories 
+
+    - name: Check if env.sh file has JAVA_HOME variable 
+      shell: egrep -i "export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" /usr/local/hadoop/etc/hadoop/hadoop-env.sh
+      ignore_errors: True 
+      register: java_env_exists 
+
+    - name: Check if already namenode and datanode direcory exits in the Server 
+      shell: ls -ld /usr/local/hadoop/tmp_dir/hdfs/namenode && ls -ld /usr/local/hadoop/tmp_dir/hdfs/datanode
+      ignore_errors: True 
+      register: directory_exists 
+
+    - name: Namenode and Data node Directory Structure with Ownership Details 
+      shell: "{{item}}"
+      with_items: 
+         - mkdir -p /usr/local/hadoop/tmp_dir/hdfs/namenode 
+         - chown vagrant:vagrant -R /usr/local/hadoop 
+         - mkdir -p /usr/local/hadoop/tmp_dir/hdfs/datanode
+         - chown vagrant:vagrant -R /usr/local/hadoop 
+      when: directory_exists.rc != 0 
+
+    - name: JAVA Environment update in /usr/local/hadoop/etc/hadoop/hadoop-env.sh 
+      shell: echo "export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" >> /usr/local/hadoop/etc/hadoop/hadoop-env.sh
+      when: java_env_exists != 0
+
+    
+    - name: Core-sit.xml Property added By ANSIBLE BLOCK
+      blockinfile:
+        dest: /usr/local/hadoop/etc/hadoop/core-site.xml
+        marker: "#<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        insertafter: "<configuration>"
+        content: |
+          <property>
+                <name>fs.default.name</name>
+                <value>hdfs://hadoop-pseuodo:9000</value>
+          </property>
+ 
+        backup: yes
+
+
+    - name: HDFS-SITE.xml  Property Added By ANSIBLE BLOCK
+      blockinfile:
+        dest: /usr/local/hadoop/etc/hadoop/hdfs-site.xml
+        marker: "#<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        insertafter: "<configuration>"
+        content: |
+          <property>
+                <name>dfs.replication</name>
+                <value>1</value>
+          </property>
+          <property>
+                <name>dfs.namenode.name.dir</name>
+                <value>file:/usr/local/hadoop/tmp_dir/hdfs/namenode</value>
+          </property>
+          <property>
+                <name>dfs.datanode.data.dir</name>
+                <value>file:/usr/local/hadoop/tmp_dir/hdfs/datanode</value>
+          </property>
+
+        backup: yes
+
+    - name: Check MAPRED-SITE.xml file exisits or not 
+      command: ls -altr  /usr/local/hadoop/etc/hadoop/mapred-site.xml
+      ignore_errors: True
+      register: mapred_exists 
+
+    - name: MAPRED-SITE.XML.TEMPLATE File Needs to be renamed  as MAPRED-SITE.xml 
+      command: cp /usr/local/hadoop/etc/hadoop/mapred-site.xml.template /usr/local/hadoop/etc/hadoop/mapred-site.xml
+      when: mapred_exists != 0
+
+
+    - name: MAPRED-SITE.xml Property needs to be added 
+      blockinfile:
+        dest: /usr/local/hadoop/etc/hadoop/mapred-site.xml 
+        marker: "#<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        insertafter: "<configuration>"
+        content: |
+         <property>
+                <name>mapreduce.framework.name</name>
+                <value>yarn</value>
+         </property>
+     
+        backup: yes
+
+    - name: YARN-SITE.xml Property Needs to be added 
+      blockinfile:
+         dest: /usr/local/hadoop/etc/hadoop/yarn-site.xml 
+         marker: "#<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+         insertafter: "<configuration>"
+         content: |
+           <property>
+                <name>yarn.nodemanager.aux-services</name>
+                <value>mapreduce_shuffle</value>
+           </property>
+           <property>
+                <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
+                <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+           </property>
+
+         backup: yes
+
+    - name: Please Format the HDFS File System  and use start-all.sh to Start Your Cluster  
+      shell: echo "Please Format the HDFS filesystem and use start-all.sh to Start your cluster Check Process using jps command"

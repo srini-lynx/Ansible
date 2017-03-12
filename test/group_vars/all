@@ -1,0 +1,8 @@
+---
+
+# This is yml file for pseuod hadoop cluster 
+
+# This is user for hadoop cluster 
+
+username: ubuntu
+
