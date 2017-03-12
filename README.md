@@ -53,14 +53,39 @@ end
 
    end
 
+
 #######################################################################
 
-Once the Provision is over .
+Step by Step Procedure to Use Ansible Script 
 
-vagrant ssh ansible 
+#######################################################################
 
-from Ansible node , clone the git repository 
+1> Initialize Vagrant File . 
 
-and start using the Ansible script as stated earlier 
+2> Once Initialized , Copy the Vagrant Code above to the Vagrant File  Save & Quit
 
+3> vagrant up 
 
+4> Once you get the hadoop and ansible nodes are up and running check and verify the same 
+
+5> vagrant status 
+
+6> vagrant ssh ansible 
+
+7> Once you are inside the Vagrant Ansible m/c 
+
+8> git clone https://github.com/srini-lynx/Ansible.git 
+
+9> After you Successfully cloned, use the hadoop-pseuodo.yml file by using command : ansible-playbook <filename>.yml
+
+10> login to  hadoop node through Vagrant 
+
+ex: vagrant ssh hadoop 
+
+11> Once inside the hadoop node 
+
+    $hadoop hdfs -format  (Format the Name node with HDFS Filesystem)
+    $start-all.sh   (Start all the Hadoop Daemons  )
+    $jps (Ensure All the Daemons are up and running , Resource manager,node manager,datanode ..etc)
+
+########################################################################
